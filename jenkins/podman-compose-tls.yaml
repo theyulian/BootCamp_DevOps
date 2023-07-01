@@ -1,0 +1,49 @@
+version: '3.5'
+services:
+  jenkins:
+    container_name: jenkins-container
+    image: quay.io/mariesillo/jenkins:ubi
+    privileged: true   
+    restart: always
+    volumes:
+      - jenkins:/var/jenkins_home
+    networks:
+      - proxy_net
+    environment:
+      ADMIN_PASSWORD: 
+      ADMIN_USER: admin
+    expose:
+      - "8080"
+      - "50000"
+  web:
+    container_name: nginx_proxy
+    image: nginx:1.17.3
+    privileged: true
+    ports:
+     - ":443"
+    restart: always
+    depends_on:
+    - jenkins
+    - cacerts
+    networks:
+      - proxy_net
+    volumes:
+     - ./default.conf:/etc/nginx/conf.d/default.conf
+     - cacerts:/etc/nginx/certs/
+  cacerts:
+    image: alpine
+    volumes:
+      - cacerts:/var/data/certs
+        #    environment:
+        #      - DOMAIN_NAME="localhost"
+    command: |
+      sh -c '''
+        apk add --update openssl # should already be installed
+        rm -rf /var/data/certs/*
+        openssl req -newkey rsa:4096 -nodes -sha256 -keyout /var/data/certs/rootCA.key -x509 -days 3650 -out /var/data/certs/jenkins.crt -subj "/C=US/O=IBM Corporation/CN=localhost/ST=MI"
+      '''
+networks:
+  proxy_net:
+volumes:
+  jenkins:
+  cacerts:

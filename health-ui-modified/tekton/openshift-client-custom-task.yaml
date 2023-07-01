@@ -1,0 +1,56 @@
+apiVersion: tekton.dev/v1beta1
+kind: ClusterTask
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: >
+      {"apiVersion":"tekton.dev/v1beta1","kind":"ClusterTask","metadata":{"annotations":{"tekton.dev/displayName":"openshift
+      client","tekton.dev/pipelines.minVersion":"0.12.1","tekton.dev/tags":"cli"},"labels":{"app.kubernetes.io/version":"0.1","operator.tekton.dev/provider-type":"redhat"},"name":"openshift-client","namespace":"openshift-pipelines","ownerReferences":[{"apiVersion":"operator.tekton.dev/v1alpha1","blockOwnerDeletion":true,"controller":true,"kind":"TektonAddon","name":"addon","uid":"80389f58-5ce0-42a0-9d67-c132bc1ff6d3"}]},"spec":{"description":"This
+      task runs commands against the cluster where the task run is being
+      executed.\nOpenShift is a Kubernetes distribution from Red Hat which
+      provides oc, the OpenShift CLI that complements kubectl for simplifying
+      deployment and configuration applications on
+      OpenShift.","params":[{"default":"oc $@","description":"The OpenShift CLI
+      arguments to
+      run","name":"SCRIPT","type":"string"},{"default":["help"],"description":"The
+      OpenShift CLI arguments to
+      run","name":"ARGS","type":"array"}],"resources":{"inputs":[{"name":"source","optional":true,"type":"git"}]},"steps":[{"args":["$(params.ARGS)"],"image":"image-registry.openshift-image-registry.svc:5000/openshift/cli:latest","name":"oc","script":"$(params.SCRIPT)"}]}}
+    tekton.dev/displayName: openshift client
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/tags: cli
+  name: openshift-client-custom
+  labels:
+    app.kubernetes.io/version: '0.1'
+    operator.tekton.dev/provider-type: redhat
+spec:
+  description: >-
+    This task runs commands against the cluster where the task run is being
+    executed.
+
+    OpenShift is a Kubernetes distribution from Red Hat which provides oc, the
+    OpenShift CLI that complements kubectl for simplifying deployment and
+    configuration applications on OpenShift.
+  params:
+    - default: oc $@
+      description: The OpenShift CLI arguments to run
+      name: SCRIPT
+      type: string
+    - default:
+        - help
+      description: The OpenShift CLI arguments to run
+      name: ARGS
+      type: array
+  resources:
+    inputs:
+      - name: source
+        optional: true
+        type: git
+  steps:
+    - args:
+        - $(params.ARGS)
+      image: 'image-registry.openshift-image-registry.svc:5000/openshift/cli:latest'
+      name: oc
+      resources: {}
+      script: $(params.SCRIPT)
+  workspaces:
+    - description: The git repo will be cloned onto the volume backing this workspace
+      name: output

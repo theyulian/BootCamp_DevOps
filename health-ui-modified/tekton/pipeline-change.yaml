@@ -1,0 +1,41 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: health-ui-pipeline-change
+spec:
+  workspaces:
+    - name: shared-workspace
+
+  tasks:
+  - name: fetch-health-ui
+    taskRef:
+      name: git-clone
+      kind: ClusterTask
+    workspaces:
+      - name: output
+        workspace: shared-workspace
+    params:
+      - name: url
+        value: <your-github-repo ie. https://github.ibm.com/DevOps-Trainings/health-ui>
+      - name: subdirectory
+        value: ""
+      - name: deleteExisting
+        value: "true"
+
+  - name: start-build-health-ui
+    taskRef:
+      name: openshift-client-custom
+      kind: ClusterTask
+    runAfter:
+      - fetch-health-ui
+    params:
+    - name: ARGS
+      value:
+        - "start-build"
+        - "health-ui"
+        - "--from-dir"
+        - "$(workspaces.output.path)/."
+        - "--follow"
+    workspaces:
+      - name: output
+        workspace: shared-workspace

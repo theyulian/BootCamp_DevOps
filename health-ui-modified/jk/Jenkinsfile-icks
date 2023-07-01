@@ -1,0 +1,103 @@
+pipeline {
+  agent any
+  stages {
+    stage('Notification') {
+      steps {
+        //send build started notifications
+        //slackSend (color: '#FFFF00', message: "STARTED: Job 'Health-App [${env.BUILD_NUMBER}]'")
+        sh 'printenv'
+      }
+    }
+    stage ('Start') {
+      steps {
+        sh 'env'
+        echo "Start Pipeline"
+        echo "Inject env into YAML"
+        sh "sed s,health-ui-image,$ICS_DTR/$NS/$UI_Name:\"${env.BUILD_NUMBER}\",g -i k8s/health-ui-deployment-icks.yaml"
+        sh "sed s,NODEPORT,$PORT,g -i k8s/health-ui-deployment-icks.yaml"
+        sh "grep image: k8s/health-ui-deployment-icks.yaml"
+        sh "sed -e '/mount_program =/s/^#//g' -i /etc/containers/storage.conf"
+        sh "grep mount_ /etc/containers/storage.conf"
+      }
+    }
+
+    stage('Build UI Service') {
+      steps {
+          sh 'podman image prune -f'
+          sh "podman build -t $ICS_DTR/$NS/$UI_Name:\"${env.BUILD_NUMBER}\" ."
+      }
+    }
+
+    stage('Environment Login') {
+      steps {
+          sh 'ibmcloud login --apikey $ICS_PASS -a https://cloud.ibm.com -r us-south'
+          sh 'ibmcloud ks cluster config -c $ICS_NAME'
+       }
+    }
+
+    stage('Store Docker Image'){
+      steps {
+        sh 'ibmcloud cr region-set us-south'
+        sh 'ibmcloud cr namespace-add $NS || true'
+        sh 'ibmcloud cr login'
+        sh "podman push $ICS_DTR/$NS/$UI_Name:\"${env.BUILD_NUMBER}\""
+        sh 'ibmcloud cr image-list'
+      }
+    }
+
+    stage("Deploy UI Service") {
+      steps {
+        sh 'kubectl create ns $NS || true'
+        echo "Import registry secret into our NS"
+        sh 'kubectl -n default get secret all-icr-io -o yaml | sed s/default/$NS/g | kubectl -n $NS create -f - || true'
+        echo "Deploying UI Service"
+        sh 'kubectl delete -f k8s/health-ui-deployment-icks.yaml -n $NS || true'
+        sh 'kubectl apply -f k8s/health-ui-deployment-icks.yaml -n $NS'
+        //Create route
+//        sh oc create route edge health-ui --service=health-ui --port=8080 --insecure-policy=Redirect || true
+      }
+    }
+
+
+    stage('Functional Test') {
+    when {
+      expression { "$func_test" == "true" }
+    }
+      steps {
+        echo "Simple Functional Test"
+        sh """
+        #!/bin/bash
+        IP=\$(kubectl get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="ExternalIP")].address}')
+        echo \${IP}
+        STATUS=\$(curl -s -o /dev/null --insecure -w '%{http_code}' "http://\${IP}:$PORT/")
+        if [ "\${STATUS}" -ne "200" ]
+        then
+           echo "Functional Test NOT PASSED"
+        else
+           echo "Functional Test PASSED"
+        fi
+        """
+       }
+    }
+  }
+  post{
+    success {
+     echo "Success"
+     // slackSend (color: '#00FF00', message: "SUCCESSFUL: Job 'Health-App [${env.BUILD_NUMBER}]'")
+    }
+    failure {
+     echo "Failure"
+      //slackSend (color: '#FF0000', message: "FAILED: Job 'Health-App [${env.BUILD_NUMBER}]'")
+    }
+  }
+  environment {
+    UI_Name    = 'health-ui'
+    func_test  = 'true'
+    NS         = 'MY-Porject_Julian_Cortez'
+    ICS_NAME   = 'mycluster-bootcamp'
+    PORT       = '32000'
+    ICS_DTR    = 'us.icr.io'
+//    ICS_USER   = credentials('ICS_USER')
+    ICS_PASS   = credentials('ICS_PASS')  // Use API token
+  }
+}

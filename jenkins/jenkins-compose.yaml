@@ -1,0 +1,19 @@
+version: '3.5'
+services:
+  jenkins:
+    container_name: jenkins-container
+    image: quay.io/mariesillo/jenkins:ubi
+    privileged: true    
+    restart: always
+    volumes:
+      - jenkins:/var/jenkins_home
+    environment:
+      ADMIN_PASSWORD: 
+      ADMIN_USER: admin
+    expose:
+      - "8080"
+      - "50000"
+    ports:
+      - ":"
+volumes:
+  jenkins:

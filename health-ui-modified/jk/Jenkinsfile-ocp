@@ -1,0 +1,106 @@
+pipeline {
+  agent any
+  stages {
+    stage ('Start') {
+      steps {
+        // send build started notifications
+        //slackSend (color: '#FFFF00', message: "STARTED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+        echo "Start Pipeline"
+        //sh "exit 1"
+      }
+    }
+    stage('Code Analysis') {
+      environment {
+       scannerHome = tool 'sonarscanner'
+      }
+      when {
+        expression { "$scan_code" == "true" }
+      }
+      steps {
+        withSonarQubeEnv('sonar') {
+         sh '${scannerHome}/bin/sonar-scanner -X -Dsonar.projectKey=health-ui -Dsonar.sources=. -Dsonar.java.binaries=. -DskipTests=true'
+        }
+      }
+    }
+    stage('Environment Login') {
+      steps {
+          sh 'oc login --server=$OCP_SERVER --username=$OCP_USER --password=$OCP_PASS --insecure-skip-tls-verify -n $NS'
+       }
+    }
+    stage("Build UI Service") {
+      steps {
+        sh """
+        #!/bin/bash
+        #FQDN=\$(oc get route \${API_Name} -o jsonpath={.spec.host})
+        #sed -e "s/var CURRENTMODE.*\$/var CURRENTMODE = MODE.OPENSHIFT;/" -i site/app.js
+        #sed  "s|var API_URL.*\$|var API_URL=\\"http://\${FQDN}/\\"|" -i site/app.js
+        BUILDEXISTS=\$(oc get bc | grep \${UI_Name} | awk '{print \$1}\')
+        if [ -z "\${BUILDEXISTS}" ]
+        then
+          oc new-build --strategy docker --binary --name  ${UI_Name}
+          oc start-build ${UI_Name} --from-dir . --follow
+        else
+          oc start-build ${UI_Name} --from-dir . --follow
+        fi
+        """
+      }
+    }
+
+    stage("Deploy UI") {
+      steps {
+        echo "Deploying UI Service"
+        sh """
+        #!/bin/bash
+        UIDEPLOYED=\$(oc get deploy | grep \${UI_Name} | awk '{print \$1}\')
+        if [ -z "\${UIDEPLOYED}" ]
+        then
+          oc new-app ${UI_Name}
+          oc expose svc/${UI_Name}
+        fi
+        """
+      }
+    }
+
+    stage('Functional Test') {
+    when {
+      expression { "$func_test" == "true" }
+    }
+      steps {
+        echo "Simple Functional Test"
+        sh """
+        #!/bin/bash
+        ROUTE=\$(oc get routes health-ui -o jsonpath='{.spec.host}')
+        echo \${ROUTE}
+        STATUS=\$(curl -s -o /dev/null --insecure -w '%{http_code}' "http://\${ROUTE}/")
+        if [ "\${STATUS}" -ne "200" ]
+        then
+           echo "Functional Test NOT PASSED"
+        else
+           echo "Functional Test PASSED"
+        fi
+        """
+       }
+    }
+
+  }
+  post{
+    success {
+      echo "${currentBuild.result}."
+      //slackSend (color: '#00FF00', message: "SUCCESSFUL: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+    }
+    failure {
+      echo "${currentBuild.result}. Sending PagerDuty alert..."
+      //pagerduty(resolve: false, serviceKey: "${PD_KEY}", incDescription: "Pipeline ${UI_Name} Failure", incDetails: "Build: ${env.BUILD_URL}")
+      //slackSend (color: '#FF0000', message: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+    }
+  }
+  environment {
+    UI_Name      = 'health-ui'
+    func_test    = 'true'
+    scan_code    = 'false'
+    OCP_SERVER   = 'https://api.crc.testing:6443'
+    OCP_USER     = credentials('OCP_USER')
+    OCP_PASS     = credentials('OCP_PASS')
+    NS           = 'MY-PROJECT-NAME'
+  }
+}
